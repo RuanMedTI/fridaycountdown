@@ -8,7 +8,7 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <!-- Font Awesome -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-  <!-- Luxon for robust timezone handling -->
+  <!-- Luxon for timezone handling -->
   <script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
   <style>
     :root {
@@ -102,6 +102,9 @@
 
   <!-- Top Right -->
   <div class="top-right-controls">
+    <button id="shareBtn" class="btn btn-outline-primary" title="Compartilhar">
+      <i class="fas fa-share-alt"></i>
+    </button>
     <button id="toggleTheme" class="btn btn-outline-secondary" title="Alternar tema claro/escuro">
       <i id="themeIcon" class="fas fa-moon"></i>
     </button>
@@ -123,7 +126,6 @@
     const shareBtn = document.getElementById("shareBtn");
     const body = document.body;
 
-    // --- i18n labels ---
     const translations = {
       pt: "Tempo restante até a próxima sexta-feira",
       en: "Time remaining until next Friday",
@@ -133,22 +135,18 @@
       zh: "距离下一个星期五的时间"
     };
 
-    // Persist user prefs ----------------------------------------------------
     function loadPrefs() {
-      const tz = localStorage.getItem('fc_tz');
-      const lang = localStorage.getItem('fc_lang');
-      const theme = localStorage.getItem('fc_theme');
-      if (tz && [...timezoneSelector.options].some(o=>o.value===tz)) {
+      const tz = localStorage.getItem('fc_tz') || "America/Sao_Paulo";
+      const lang = localStorage.getItem('fc_lang') || "pt";
+      const theme = localStorage.getItem('fc_theme') || "light";
+
+      if ([...timezoneSelector.options].some(o => o.value === tz)) {
         timezoneSelector.value = tz;
       }
-      if (lang && translations[lang]) {
+      if (translations[lang]) {
         languageSelector.value = lang;
       }
-      if (theme === 'dark') {
-        setTheme('dark');
-      } else if (theme === 'light') {
-        setTheme('light');
-      }
+      setTheme(theme);
       updateLanguage();
     }
 
@@ -158,18 +156,15 @@
       localStorage.setItem('fc_theme', body.classList.contains('dark') ? 'dark':'light');
     }
 
-    // Theme ----------------------------------------------------------------
     function setTheme(mode) {
       if (mode === 'dark') {
         body.classList.add('dark');
         body.classList.remove('light');
-        themeIcon.classList.remove('fa-moon');
-        themeIcon.classList.add('fa-sun');
+        themeIcon.classList.replace('fa-moon', 'fa-sun');
       } else {
         body.classList.add('light');
         body.classList.remove('dark');
-        themeIcon.classList.remove('fa-sun');
-        themeIcon.classList.add('fa-moon');
+        themeIcon.classList.replace('fa-sun', 'fa-moon');
       }
     }
 
@@ -179,26 +174,19 @@
       savePrefs();
     });
 
-    // --- Timezone math (Luxon) --------------------------------------------
-    // Luxon weekday: 1=Mon ... 5=Fri ... 7=Sun
     function getNextFriday(zone) {
       const now = DateTime.now().setZone(zone);
       let friday = now.startOf('day').plus({ days: (5 - now.weekday + 7) % 7 });
-      // If it's already Friday *and* we've passed midnight (i.e., now>=friday start), we want the next week's Friday
-      if (friday <= now) {
-        friday = friday.plus({ days: 7 });
-      }
-      return friday; // midnight at start of that Friday in selected zone
+      if (friday <= now) friday = friday.plus({ days: 7 });
+      return friday;
     }
 
     function formatDiff(diffObj) {
       const days = Math.floor(diffObj.as('days'));
       const remainder = diffObj.minus({ days });
       const hours = Math.floor(remainder.as('hours'));
-      const remainder2 = remainder.minus({ hours });
-      const minutes = Math.floor(remainder2.as('minutes'));
-      const remainder3 = remainder2.minus({ minutes });
-      const seconds = Math.floor(remainder3.as('seconds'));
+      const minutes = Math.floor(remainder.minus({ hours }).as('minutes'));
+      const seconds = Math.floor(remainder.minus({ hours, minutes }).as('seconds'));
       return `${String(days).padStart(2,'0')}:${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}`;
     }
 
@@ -207,56 +195,43 @@
       const now = DateTime.now().setZone(zone);
       const target = getNextFriday(zone);
       const diff = target.diff(now, ['days','hours','minutes','seconds']);
-      if (diff.toMillis() <= 0) {
-        countdownElement.textContent = '00:00:00:00';
-      } else {
-        countdownElement.textContent = formatDiff(diff);
-      }
+      countdownElement.textContent = diff.toMillis() <= 0 ? '00:00:00:00' : formatDiff(diff);
       savePrefs();
     }
 
-    // --- Language ----------------------------------------------------------
     function updateLanguage() {
       const lang = languageSelector.value;
       label.textContent = translations[lang] || translations['pt'];
       document.documentElement.lang = lang;
-      // direction for Arabic
-      if (lang === 'ar') {
-        document.documentElement.dir = 'rtl';
-      } else {
-        document.documentElement.dir = 'ltr';
-      }
+      document.documentElement.dir = (lang === 'ar') ? 'rtl' : 'ltr';
       savePrefs();
     }
 
     languageSelector.addEventListener('change', updateLanguage);
     timezoneSelector.addEventListener('change', updateCountdown);
 
-    // --- Share -------------------------------------------------------------
     shareBtn.addEventListener('click', async () => {
       const shareData = {
-        title: document.title,
-        text: label.textContent,
-        url: window.location.href
+        title: "Contagem para Sexta-feira",
+        text: "Veja quanto tempo falta para a próxima sexta-feira!",
+        url: "https://myfridaycountdown.com/"
       };
       if (navigator.share) {
         try {
           await navigator.share(shareData);
         } catch (err) {
-          console.warn('Share canceled or failed', err);
+          console.warn('Erro ao compartilhar', err);
         }
       } else {
-        // fallback copy to clipboard
         try {
-          await navigator.clipboard.writeText(window.location.href);
+          await navigator.clipboard.writeText(shareData.url);
           alert('Link copiado para a área de transferência!');
         } catch (err) {
-          alert('Não foi possível copiar automaticamente. Copie manualmente: ' + window.location.href);
+          alert('Não foi possível copiar. Copie manualmente: ' + shareData.url);
         }
       }
     });
 
-    // --- Init --------------------------------------------------------------
     loadPrefs();
     updateCountdown();
     setInterval(updateCountdown, 1000);
